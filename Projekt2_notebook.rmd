@@ -1,0 +1,296 @@
+---
+output:
+  html_document:
+    df_print: paged
+pdf_document: default
+word_document: default
+---
+# 1.1 Wczytanie danych i bibliotek
+
+Wczytujemy odpowiednie biblioteki, które będą wykorzystywane w analizie. Do wczytania, wykorzystujemy komendę *read.delim()*.
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+dynow_temp<-read.delim("dynow_t.txt")
+dynow_opady<-read.delim("dynow_p.txt")
+View(dynow_temp)
+View(dynow_opady)
+```
+
+# 1.2 Uzupełnienie brakujących wartości
+
+W zaimportowanych pakietach danych znajdują się brakujące wartości. Zastępujemy je średnią arytmetyczną kolumn w których dane braki występowały. Całość odbywa się w pętli.
+
+```{r}
+#dla temperatury - "dynow_temp"
+for(i in 2:13) 
+{
+  tmp <- dynow_temp[,i] #dane z i-tej kolumny do tymczasowej zmiennej
+  
+  tmp[which(is.na(tmp))] <- mean(tmp, na.rm = T) #zmiana na średnią
+  
+  dynow_temp[,i] <- round(tmp, digits = 2) #powrót zmodyfikowanej i zaokrąglonej kolumny na swoje miejsce
+}
+
+#dla opadów - "dynow_opady" - analogicznie jak wyżej
+for(i in 2:13)
+{
+  tmp <- dynow_opady[,i]
+  
+  tmp[which(is.na(tmp))] <- mean(tmp, na.rm = T)
+  
+  dynow_opady[,i] <- round(tmp, digits = 2)
+} 
+```
+
+# 1.3 Połącznie baz danych o opadach i temperaturach
+
+Aby móc w dalszej części wykonać analizę korelacji średniej temperatury i sumy opadów dla każdego miesiąca połączymy bazy danych. Najpierw zmienimy nazwy kolumn w bazie *dynow_temp* za pomocą funkcji *colnames()* dodając do każdego miesiąca *.temp*, to samo dla bazy *dynow_opady* dodając *.opady* i łączymy bazy za pomocą funkcji *full.join()* zapisując powstałą bazę jako *dynow*.
+
+```{r}
+colnames(dynow_temp)<-c("rok","I.temp","II.temp","III.temp","IV.temp","V.temp","VI.temp","VII.temp","VIII.temp","IX.temp","X.temp","XI.temp","XII.temp")
+
+colnames(dynow_opady)<-c("rok","I.opady","II.opady","III.opady","IV.opady","V.opady","VI.opady","VII.opady","VIII.opady","IX.opady","X.opady","XI.opady","XII.opady")
+
+dynow<-full_join(dynow_temp, dynow_opady, by="rok")
+View(dynow)
+```
+
+# 1.4 Utworzenie wykresów rozrzutu z trendem dla sumy opadów w miesiącu na przestrzeni lat
+
+Do stworzenia wykresów rozrzutu wykorzystujemy pakiet *ggplot2* oraz zawartą w nim funkcję *ggplot()* oraz *geom_point*. Aby dodać trend zastosujemy funkcję *geom_smooth()*. Dodatkowo uzupełniamy wykres pozostałymi informacjami. Całość odbywa się w pętli.
+
+```{r}
+
+rok <- dynow_opady$rok
+miesiace <- c("Styczeń", "Luty", "Marzec", "Kwieceń", "Maj", "Czerwiec", "Lipiec", "Sierpień", "Wrzesień", "Październik", "Listopad", "Grudzień")
+
+for(i in 2:13)
+{
+  tmp <- dynow_opady[,i] #dane z itej kolumny (kolejne miesiące)
+  
+  tmp_df <- data.frame(rok, tmp) #tymczasowy df z rokiem i danymi dla kolejnych miesięcy
+  
+  tmp_plot <-ggplot(tmp_df, aes(rok, tmp)) + #wykres
+              geom_point(color="orange", size=2)+
+              geom_smooth(method="lm", color="red")+
+              xlab("Rok")+
+              ylab("Suma opadów [mm]")+ 
+              ggtitle(miesiace[i-1])
+  
+  ggsave(tmp_plot, filename = paste0("opady.trend_",miesiace[i-1],".png")) #zapisywanie poszczególnych wykresów
+}
+```
+
+# 2.1 Utworzenie wykresów korelacji sumy opadów i średniej temperatury w miesiącu.
+
+Postępujemy analogicznie jak w punkcie 1.4 wykorzystując funkcje: *ggplot()*, *geom_point*, *geom_smooth()*. Całość powtarzamy w pętli.
+
+```{r}
+for(i in 2:13)
+{
+  tmp1 <- dynow[,i] #dane z itej kolumny (kolejne miesiące) [temperatura]
+  tmp2 <- dynow[,i+12] #dane z kolumn z opadami 
+  
+  tmp_df <- data.frame(tmp2, tmp1) #tymczasowy df
+  
+  tmp_plot <-ggplot(tmp_df, aes(tmp2, tmp1)) + #wykres
+              geom_point(color="blue", size=2)+
+              geom_smooth(method="lm", color="red")+
+              xlab("Suma opadów [mm]")+
+              ylab("Średnia temperatura [°C]")+ 
+              ggtitle(miesiace[i-1])
+  
+  ggsave(tmp_plot, filename = paste0("cor_temp-opady_",miesiace[i-1],".png")) #zapisywanie
+}
+```
+
+# 2.1 Utworzenie kolumn ze średnimi temperaturami oraz sumą opadów w porach roku i w okresie wegetacyjnym.
+
+```{r}
+
+#pory roku - temperatura
+
+dynow <- dynow %>% as_tibble() %>%
+  mutate(wiosna.temp.avg = (III.temp + IV.temp + V.temp)/3) #wiosna
+
+dynow <- dynow %>% as_tibble() %>%
+  mutate(lato.temp.avg = (VI.temp + VII.temp + VIII.temp)/3) #lato
+
+dynow <- dynow %>% as_tibble() %>%
+  mutate(jesien.temp.avg = (IX.temp + X.temp + XI.temp)/3) #jesień
+
+dynow <- dynow %>% as_tibble() %>%
+  mutate(zima.temp.avg = (XII.temp + I.temp + II.temp)/3) #zima
+
+dynow <- dynow %>% as_tibble() %>%
+  mutate(ow.temp.avg = (V.temp + VI.temp + VII.temp + VIII.temp + IX.temp)/5) #ow
+
+#pory roku - opady
+
+dynow <- dynow %>% as_tibble() %>%
+  mutate(wiosna.opady.sum = (III.opady + IV.opady + V.opady)) %>% #wiosna
+  round(digits = 2)
+
+dynow <- dynow %>% as_tibble() %>%
+  mutate(lato.opady.sum = (VI.opady + VII.opady + VIII.opady)) %>% #lato
+  round(digits = 2)
+
+dynow <- dynow %>% as_tibble() %>%
+  mutate(jesien.opady.sum = (IX.opady + X.opady + XI.opady)) %>% #jesień
+  round(digits = 2)
+
+dynow <- dynow %>% as_tibble() %>%
+  mutate(zima.opady.sum = (XII.opady + I.opady + II.opady)) %>% #zima
+  round(digits = 2)
+
+dynow <- dynow %>% as_tibble() %>%
+  mutate(ow.opady.sum = (V.opady + VI.opady + VII.opady + VIII.opady + IX.opady)) %>% #ow
+  round(digits = 2)
+```
+
+# 2.2 Utworzenie wykresów korelacji sumy opadów i średniej temperatury w porach roku i okresu wegetacyjnego.
+
+Najpierw tworzymy *data.frame dynow_okresy*, w którym oprócz kolumny rok, znajdują się średnie temperatury i sumy opadów dla pór roku i okresu wegetacyjnego.
+
+```{r}
+dynow_okresy<-data.frame(dynow$rok, dynow$wiosna.temp.avg, dynow$lato.temp.avg,  dynow$jesien.temp.avg,  dynow$zima.temp.avg, dynow$ow.temp.avg, dynow$wiosna.opady.sum, dynow$lato.opady.sum, dynow$jesien.opady.sum, dynow$zima.opady.sum, dynow$ow.opady.sum)
+View(dynow_okresy)
+```
+
+Następnie podobnie jak w punkcie 2.1 tworzymy wykresy korelacji za pomocą pętli.
+
+```{r}
+okresy <- c("Wiosna", "Lato", "Jesień", "Zima", "Okres Wegetacyjny")
+
+j<-1
+for(i in 2:6)
+{
+  tmp1 <- dynow_okresy[,i] #dane z itej kolumny (kolejne miesiące) [temperatura]
+
+  tmp2 <- dynow_okresy[,i+5] #dane z kolumn z opadami 
+
+  tmp_df <- data.frame(tmp2, tmp1) #tymczasowy df
+
+  tmp_plot <- ggplot(tmp_df, aes(tmp2, tmp1)) + #wykres
+               geom_point(color="darkgreen", size=2)+
+               geom_smooth(method="lm", color="red")+
+               xlab("Suma opadów [mm]")+
+               ylab("Średnia temperatura [°C]")+ 
+               ggtitle(okresy[j]) +
+              
+   ggsave(tmp_plot, filename = paste0("cor_temp-opady_",okresy[j],".png")) #zapisywanie
+  j=j+1
+}
+```
+
+# 2.2 Obliczanie współczynnika korelacji Pearsona i współczynnika rang Spearmana
+
+Współczynniki obliczymy za pomocą funkcji *cor()* i parametru *method*. Wyniki wyświetlamy przy użyciu funkcji *print*.
+
+Dla miesięcy:
+
+  -wspł. Pearsona:
+  
+```{r}
+for(i in 2:13)
+{
+  tmp1 <- dynow[,i]
+  
+  tmp2 <- dynow[,i+12]
+ 
+  wsp_p_mies <- cor(tmp1, tmp2, method="pearson")
+  
+  print(c(miesiace[i-1], wsp_p_mies))
+}
+```
+
+  -wspł. Spearmana:
+  
+```{r}
+for(i in 2:13)
+{
+  tmp1 <- dynow[,i]
+  
+  tmp2 <- dynow[,i+12]
+ 
+  wsp_p_mies <- cor(tmp1, tmp2, method="pearson")
+  
+  print(c(miesiace[i-1], wsp_p_mies))
+}
+```
+
+Dla pór roku i okresu wegetacyjnego:
+  
+  -wspł. Pearsona:
+
+```{r}
+j<-1
+for(i in 2:6)
+{
+  tmp1 <- dynow_okresy[,i]
+  
+  tmp2 <- dynow_okresy[,i+5]
+ 
+  wsp_p_okresy <- cor(tmp1, tmp2, method="pearson")
+  
+  print(c(okresy[j], wsp_p_okresy))
+
+  j=j+1
+}
+```
+
+  -wspł. rang Spearmana:
+
+```{r}
+j<-1
+for(i in 2:6)
+{
+  tmp1 <- dynow_okresy[,i]
+  
+  tmp2 <- dynow_okresy[,i+5]
+ 
+  wsp_p_okresy <- cor(tmp1, tmp2, method="spearman")
+  
+  print(c(okresy[j], wsp_p_okresy))
+
+  j=j+1
+}
+```
+
+# 2.3 Badanie istotności współczynników korelacji (w przypadku badania korelacji Pearsona).
+
+Istotność korelacji sprawdzmy za pomocą funkcji *cor.test*. Przyjmujemy, że korelacja jest istotna gdy p < 0.05 (linijka opisana komentarzem "istotna").
+
+```{r}
+
+#dla miesięcy
+cor.test(dynow$I.temp, dynow$I.opady)
+cor.test(dynow$II.temp, dynow$II.opady) #istotna
+cor.test(dynow$III.temp, dynow$III.opady)
+cor.test(dynow$IV.temp, dynow$IV.opady)
+cor.test(dynow$V.temp, dynow$V.opady)
+cor.test(dynow$VI.temp, dynow$VI.opady) #istotna
+cor.test(dynow$VII.temp, dynow$VII.opady) #istotna
+cor.test(dynow$VIII.temp, dynow$VIII.opady)
+cor.test(dynow$IX.temp, dynow$IX.opady) #istotna
+cor.test(dynow$X.temp, dynow$X.opady)
+cor.test(dynow$XI.temp, dynow$XI.opady)
+cor.test(dynow$XII.temp, dynow$XII.opady) #istotna
+
+#dla pór roku i okresu wegetacyjnego:
+cor.test(dynow_okresy$dynow.wiosna.temp.avg, dynow_okresy$dynow.wiosna.opady.sum)
+cor.test(dynow_okresy$dynow.lato.temp.avg, dynow_okresy$dynow.lato.opady.sum)
+cor.test(dynow_okresy$dynow.jesien.temp.avg, dynow_okresy$dynow.jesien.opady.sum)
+cor.test(dynow_okresy$dynow.zima.temp.avg, dynow_okresy$dynow.zima.opady.sum)
+cor.test(dynow_okresy$dynow.ow.temp.avg, dynow_okresy$dynow.ow.opady.sum)
+```
+
+
+
+
+
+
+
